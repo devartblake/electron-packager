@@ -6,7 +6,7 @@ const debug = require('debug')('electron-packager')
 const fs = require('fs-extra')
 const path = require('path')
 const plist = require('plist')
-const { notarize, validateAuthorizationArgs } = require('electron-notarize')
+const { notarize } = require('electron-notarize')
 const { signAsync } = require('electron-osx-sign')
 
 class MacApp extends App {
@@ -183,6 +183,10 @@ class MacApp extends App {
     return plists.concat(optional.filter(item => item))
   }
 
+  appRelativePath (p) {
+    return path.relative(this.contentsPath, p)
+  }
+
   async updatePlistFiles () {
     const appBundleIdentifier = this.bundleName
     this.helperBundleIdentifier = filterCFBundleIdentifier(this.opts.helperBundleId || `${appBundleIdentifier}.helper`)
@@ -190,6 +194,11 @@ class MacApp extends App {
     const plists = await this.determinePlistFilesToUpdate()
     await Promise.all(plists.map(plistArgs => this.loadPlist(...plistArgs)))
     await this.extendPlist(this.appPlist, this.opts.extendInfo)
+    if (this.asarIntegrity) {
+      await this.extendPlist(this.appPlist, {
+        ElectronAsarIntegrity: this.asarIntegrity
+      })
+    }
     this.appPlist = this.updatePlist(this.appPlist, this.executableName, appBundleIdentifier, this.appName)
 
     const updateIfExists = [
@@ -417,17 +426,12 @@ function createSignOpts (properties, platform, app, version, notarize, quiet) {
 }
 
 function createNotarizeOpts (properties, appBundleId, appPath, quiet) {
-  try {
-    validateAuthorizationArgs(properties)
-  } catch (e) {
-    common.warning(`Failed validation, notarization will not run: ${e.message}`)
-    return
-  }
-
   // osxNotarize options are handed off to the electron-notarize module, but with a few
   // additions from the main options. The user may think they can pass bundle ID or appPath,
   // but they will be ignored.
-  common.subOptionWarning(properties, 'osxNotarize', 'appBundleId', appBundleId, quiet)
+  if (properties.tool !== 'notarytool') {
+    common.subOptionWarning(properties, 'osxNotarize', 'appBundleId', appBundleId, quiet)
+  }
   common.subOptionWarning(properties, 'osxNotarize', 'appPath', appPath, quiet)
   return properties
 }

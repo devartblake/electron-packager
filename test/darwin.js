@@ -298,11 +298,10 @@ if (!(process.env.CI && process.platform === 'win32')) {
     t.deepEqual(obj.CFBundleURLTypes, expected, 'CFBundleURLTypes did not contain specified protocol schemes and names')
   }))
 
-  test('osxNotarize: missing appleIdPassword', t => {
-    util.setupConsoleWarnSpy()
-    const notarizeOpts = mac.createNotarizeOpts({ appleId: '' })
-    t.falsy(notarizeOpts, 'does not generate options')
-    util.assertWarning(t, 'WARNING: Failed validation, notarization will not run: The appleId property is required when using notarization with appleIdPassword')
+  test('osxNotarize: appBundleId can be overwritten if tool = notarytool', t => {
+    const args = { appleId: '1', appleIdPassword: '2', appBundleId: 'overwritten', tool: 'notarytool' }
+    const notarizeOpts = mac.createNotarizeOpts(args, 'original', 'appPath', true)
+    t.is(notarizeOpts.appBundleId, 'overwritten', 'appBundleId is taken from user-supplied options')
   })
 
   test('osxNotarize: appBundleId not overwritten', t => {
@@ -466,5 +465,25 @@ if (!(process.env.CI && process.platform === 'win32')) {
     const appPath = path.join(finalPath, 'Electron.app')
     await util.assertDirectory(t, appPath, 'The Electron.app folder exists')
     await util.assertFile(t, path.join(appPath, 'Contents', 'MacOS', 'Electron'), 'The Electron.app/Contents/MacOS/Electron binary exists')
+  }))
+
+  test.serial('asar integrity hashes are not inserted when asar is disabled', darwinTest(async (t, baseOpts) => {
+    const opts = { ...baseOpts, asar: false }
+    const finalPath = (await packager(opts))[0]
+    const plistObj = await parseInfoPlist(t, opts, finalPath)
+    t.is(typeof plistObj.ElectronAsarIntegrity, 'undefined')
+  }))
+
+  test.serial('asar integrity hashes are automatically inserted', darwinTest(async (t, baseOpts) => {
+    const opts = { ...baseOpts, asar: true }
+    const finalPath = (await packager(opts))[0]
+    const plistObj = await parseInfoPlist(t, opts, finalPath)
+    t.is(typeof plistObj.ElectronAsarIntegrity, 'object')
+    t.deepEqual(plistObj.ElectronAsarIntegrity, {
+      'Resources/app.asar': {
+        algorithm: 'SHA256',
+        hash: '27f2dba4273f6c119000ec7059c27d86e27306d5dbbb83cfdfb862d92c679574'
+      }
+    })
   }))
 }
